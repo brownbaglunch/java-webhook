@@ -1,0 +1,99 @@
+{
+  "index_patterns": [
+    "bblfr*"
+  ],
+  "settings": {
+    "number_of_shards": 1
+  },
+  "mappings": {
+    "doc": {
+      "properties": {
+        "bio": {
+          "type": "text"
+        },
+        "cities": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword"
+            }
+          }
+        },
+        "contacts": {
+          "properties": {
+            "mail": {
+              "type": "keyword"
+            },
+            "twitter": {
+              "type": "keyword"
+            }
+          }
+        },
+        "location": {
+          "type": "text"
+        },
+        "locations": {
+          "properties": {
+            "location": {
+              "type": "geo_point"
+            },
+            "name": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "ville_img": {
+              "type": "keyword"
+            }
+          }
+        },
+        "name": {
+          "type": "text"
+        },
+        "picture": {
+          "type": "keyword"
+        },
+        "sessions": {
+          "properties": {
+            "abstract": {
+              "type": "text"
+            },
+            "lang": {
+              "type": "keyword"
+            },
+            "tags": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              }
+            },
+            "title": {
+              "type": "text"
+            }
+          }
+        },
+        "since": {
+          "type": "date"
+        },
+        "websites": {
+          "properties": {
+            "name": {
+              "type": "keyword"
+            },
+            "url": {
+              "type": "keyword"
+            }
+          }
+        }
+      }
+    }
+  },
+  "aliases": {
+    "bblfr": {}
+  }
+}
