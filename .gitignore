@@ -115,3 +115,5 @@ crashlytics-build.properties
 fabric.properties
 
 *.iml
+
+.vertx
