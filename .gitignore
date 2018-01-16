@@ -117,3 +117,5 @@ fabric.properties
 *.iml
 
 .vertx
+
+.idea
