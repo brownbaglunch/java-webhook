@@ -124,6 +124,17 @@ public class WebhookVerticle extends AbstractVerticle {
                 writeJsonResponse(routingContext, new JsonObject().put("message", "Signature Key is incorrect. We skip the update process.").encodePrettily());
             }
         });
+        router.route(HttpMethod.POST, "/_validate").handler(BodyHandler.create()).handler(routingContext -> {
+            logger.info("POST /_validate has been called.");
+            // We need to check the Token is set
+            String signature = routingContext.request().getHeader("X-Hub-Signature");
+            String body = routingContext.getBodyAsString();
+            logger.info(body);
+            logger.info(signature);
+
+            // Write to the response and end it
+            writeJsonResponse(routingContext, new JsonObject().put("message", "WIP: _validate has been called.").encodePrettily());
+        });
 
         router.route(HttpMethod.POST, "/_stop").handler(routingContext -> {
             // This handler will be called to stop vertx
