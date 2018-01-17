@@ -28,6 +28,9 @@ public class KeyChecker {
     private final static Logger logger = LogManager.getLogger(KeyChecker.class);
 
     public static boolean testGithubToken(String source, String signature, String token) {
+        logger.debug("signature= {}, token= {}", signature, token);
+        logger.debug("{}", source);
+
         if (token == null || signature == null) {
             logger.warn("GitHub token has not been sent as X-Hub-Signature header or is not set as TOKEN system property.");
             return false;
