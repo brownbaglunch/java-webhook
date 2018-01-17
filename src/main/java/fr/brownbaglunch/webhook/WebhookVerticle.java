@@ -36,6 +36,7 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.WebClient;
+import io.vertx.ext.web.handler.BodyHandler;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -75,7 +76,7 @@ public class WebhookVerticle extends AbstractVerticle {
             // Write to the response and end it
             writeJsonResponse(routingContext, new JsonObject().put("message", "Vert.x is running!").encodePrettily());
         });
-        router.route(HttpMethod.POST, "/").handler(routingContext -> {
+        router.route(HttpMethod.POST, "/").handler(BodyHandler.create()).handler(routingContext -> {
             logger.debug("POST / has been called.");
             // We need to check the Token is set
             boolean keyIsChecked;

@@ -28,7 +28,7 @@ public class KeyChecker {
     private final static Logger logger = LogManager.getLogger(KeyChecker.class);
 
     public static boolean testGithubToken(String source, String signature, String token) {
-        logger.debug("signature= {}, token= {}", signature, token);
+        logger.debug("signature= {}", signature);
         logger.debug("{}", source);
 
         if (token == null || signature == null) {
