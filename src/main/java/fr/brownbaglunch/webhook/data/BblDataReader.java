@@ -49,7 +49,7 @@ public class BblDataReader {
             // Find the city in the cities map
             City city = cities.get(cityName);
             if (city == null) {
-                logger.error("City {} does not exist in ", cityName, cities.keySet());
+                logger.error("City {} does not exist in {}", cityName, cities.keySet());
             } else {
                 Speaker.GeoLocation geoLocation = new Speaker.GeoLocation();
                 geoLocation.name = city.name;
