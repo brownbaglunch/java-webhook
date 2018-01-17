@@ -20,7 +20,9 @@
 package fr.brownbaglunch.webhook;
 
 import fr.brownbaglunch.webhook.data.BblDataReader;
+import fr.brownbaglunch.webhook.data.GithubPrReader;
 import fr.brownbaglunch.webhook.model.City;
+import fr.brownbaglunch.webhook.model.GithubPrEvent;
 import fr.brownbaglunch.webhook.model.Speaker;
 import fr.brownbaglunch.webhook.util.KeyChecker;
 import io.vertx.core.AbstractVerticle;
@@ -49,20 +51,13 @@ public class WebhookVerticle extends AbstractVerticle {
 
     private final static Logger logger = LogManager.getLogger(WebhookVerticle.class);
 
-    private static final String DEFAULT_SOURCE = "https://raw.githubusercontent.com/brownbaglunch/bblfr_data/gh-pages/baggers.js";
-    private static final String DEFAULT_TOKEN = null;
-    private static final int DEFAULT_PORT = 8080;
-
     private final Vertx vertx;
 
-    private final static String source = System.getenv().getOrDefault("SOURCE", System.getProperties().getProperty("SOURCE", DEFAULT_SOURCE));
-    private final static String token = System.getenv().getOrDefault("TOKEN", System.getProperties().getProperty("TOKEN", DEFAULT_TOKEN));
-    private final static Integer port = Integer.parseInt(System.getenv().getOrDefault("PORT", System.getProperties().getProperty("PORT", "" + DEFAULT_PORT)));
     private WebClient client;
 
     WebhookVerticle(Vertx vertx) throws IOException {
         this.vertx = vertx;
-        logger.info("Starting HTTP server on port {}", port);
+        logger.info("Starting HTTP server on port {}", Environment.port);
     }
 
     @Override
@@ -83,8 +78,8 @@ public class WebhookVerticle extends AbstractVerticle {
             String signature = routingContext.request().getHeader("X-Hub-Signature");
             String body = routingContext.getBodyAsString();
             logger.trace(body);
-            if (signature != null || token != null) {
-                keyIsChecked = KeyChecker.testGithubToken(body, signature, token);
+            if (signature != null || Environment.token != null) {
+                keyIsChecked = KeyChecker.testGithubToken(body, signature, Environment.token);
             } else {
                 logger.warn("Signature has not been verified. Probably Dev Mode.");
                 keyIsChecked = true;
@@ -92,8 +87,9 @@ public class WebhookVerticle extends AbstractVerticle {
 
             if (keyIsChecked) {
                 // This handler will be called by github when data are changing
-                logger.info("Reading data from {}", source);
-                HttpRequest<Buffer> request = client.getAbs(source);
+                String url = Environment.root + "/" + Environment.branch + Environment.source;
+                logger.info("Reading data from {}", url);
+                HttpRequest<Buffer> request = client.getAbs(url);
                 request.send(handler -> {
                     if (handler.succeeded()) {
                         String githubData = handler.result().bodyAsString();
@@ -103,20 +99,29 @@ public class WebhookVerticle extends AbstractVerticle {
 
                             LocalMap<String, City> cities = sd.getLocalMap("cities");
                             LocalMap<String, Speaker> speakers = sd.getLocalMap("speakers");
-                            BblDataReader.fillSpeakersAndCities(githubData, speakers, cities);
+                            boolean failure = BblDataReader.fillSpeakersAndCities(githubData, speakers, cities);
 
                             EventBus eb = vertx.eventBus();
                             eb.publish("elasticsearch.index", "TODO Index data");
 
                             // Write to the response and end it
-                            writeJsonResponse(routingContext, new JsonObject().put("speakers", speakers.size()).put("cities", cities.size()).encodePrettily());
+                            writeJsonResponse(routingContext,
+                                    new JsonObject()
+                                            .put("speakers", speakers.size())
+                                            .put("cities", cities.size())
+                                            .put("with_failures", failure)
+                                            .encodePrettily());
                         } catch (IOException e) {
-                            logger.error("Failed to parse JSON from ", source);
+                            logger.error("Failed to parse JSON from ", url);
+                            writeJsonResponse(routingContext,
+                                    new JsonObject().put("message", "Failed to parse the JSON document.").encodePrettily());
                         }
 
                     }
                     if (handler.failed()) {
-                        logger.error("Failed to read from ", source);
+                        logger.error("Failed to read from ", url);
+                        writeJsonResponse(routingContext,
+                                new JsonObject().put("message", "Failed to read the content from " + url + ".").encodePrettily());
                     }
                 });
             } else {
@@ -127,13 +132,79 @@ public class WebhookVerticle extends AbstractVerticle {
         router.route(HttpMethod.POST, "/_validate").handler(BodyHandler.create()).handler(routingContext -> {
             logger.info("POST /_validate has been called.");
             // We need to check the Token is set
+            boolean keyIsChecked;
             String signature = routingContext.request().getHeader("X-Hub-Signature");
             String body = routingContext.getBodyAsString();
-            logger.info(body);
-            logger.info(signature);
+            logger.trace(body);
+            if (signature != null || Environment.token != null) {
+                keyIsChecked = KeyChecker.testGithubToken(body, signature, Environment.token);
+            } else {
+                logger.warn("Signature has not been verified. Probably Dev Mode.");
+                keyIsChecked = true;
+            }
 
-            // Write to the response and end it
-            writeJsonResponse(routingContext, new JsonObject().put("message", "WIP: _validate has been called.").encodePrettily());
+            if (keyIsChecked) {
+                // Convert the event to a PR
+                try {
+                    GithubPrEvent pr = GithubPrReader.toGithubEvent(body);
+
+                    // We just check if the pr is still active
+                    if ("opened".equals(pr.action) || "synchronize".equals(pr.action)) {
+                        String url = pr.getUrl();
+                        logger.info("Reading data from {}", url);
+                        HttpRequest<Buffer> request = client.getAbs(url);
+                        request.send(handler -> {
+                            if (handler.succeeded()) {
+                                String githubData = handler.result().bodyAsString();
+                                logger.trace(githubData);
+                                try {
+                                    SharedData sd = vertx.sharedData();
+
+                                    LocalMap<String, City> cities = sd.getLocalMap("cities");
+                                    LocalMap<String, Speaker> speakers = sd.getLocalMap("speakers");
+                                    boolean failure = BblDataReader.fillSpeakersAndCities(githubData, speakers, cities);
+
+                                    // Write to the response and end it
+                                    String json = new JsonObject()
+                                            .put("message", "PR Checked. Everything seems ok.")
+                                            .put("commit", pr.pull_request.head.sha)
+                                            .put("speakers", speakers.size())
+                                            .put("cities", cities.size())
+                                            .put("with_failures", failure)
+                                            .encodePrettily();
+                                    writeJsonResponse(routingContext, json);
+                                    logger.info("{}", json);
+                                } catch (IOException e) {
+                                    logger.error("Failed to parse JSON from ", url);
+                                    writeJsonResponse(routingContext,
+                                            new JsonObject().put("message", "Failed to parse the JSON document.").encodePrettily());
+                                    logger.warn("Check the PR. Something seems wrong.", e);
+                                }
+                            }
+                            if (handler.failed()) {
+                                logger.error("Failed to read from ", url);
+                                writeJsonResponse(routingContext,
+                                        new JsonObject().put("message", "Failed to read the content from " + url + ".").encodePrettily());
+                            }
+                        });
+                    } else {
+                        writeJsonResponse(routingContext,
+                                new JsonObject().put("message", "Not supported action [" + pr.action + "]. Skipped").encodePrettily());
+                    }
+
+                } catch (IOException e) {
+                    logger.error("Failed to parse the PR JSON document", e);
+                    writeJsonResponse(routingContext,
+                            new JsonObject().put("message", "Failed to parse the PR JSON document.").encodePrettily());
+                }
+
+                // If possible but that is going to require to become an application
+                // https://developer.github.com/v3/pulls/reviews/#submit-a-pull-request-review
+                // POST /repos/:owner/:repo/pulls/:number/reviews/:id/events
+            } else {
+                // Write to the response and end it
+                writeJsonResponse(routingContext, new JsonObject().put("message", "Signature Key is incorrect. We skip the update process.").encodePrettily());
+            }
         });
 
         router.route(HttpMethod.POST, "/_stop").handler(routingContext -> {
@@ -142,8 +213,8 @@ public class WebhookVerticle extends AbstractVerticle {
             // We check that the token is correct. In production, people need to send the right "X-Bblfr-Key: XXXX" value
             String signature = routingContext.request().getHeader("X-Bblfr-Key");
             boolean keyIsChecked;
-            if (signature != null || token != null) {
-                keyIsChecked = KeyChecker.testGithubToken("", signature, token);
+            if (signature != null || Environment.token != null) {
+                keyIsChecked = KeyChecker.testGithubToken("", signature, Environment.token);
             } else {
                 logger.warn("Signature has not been verified. Probably Dev Mode.");
                 keyIsChecked = true;
@@ -161,8 +232,8 @@ public class WebhookVerticle extends AbstractVerticle {
 
         vertx.createHttpServer()
                 .requestHandler(router::accept)
-                .listen(port);
-        logger.info("HTTP server started on port {}", port);
+                .listen(Environment.port);
+        logger.info("HTTP server started on port {}", Environment.port);
     }
 
     @Override

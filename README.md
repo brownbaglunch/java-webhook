@@ -11,9 +11,11 @@ Each time something is pushed on [bblfr_data](https://github.com/brownbaglunch/b
 * move or create alias `bblfr` on the index name
 * remove the old indices
 
-Data are available in elasticsearch:
+Data are then available in elasticsearch:
 
 * [baggers](http://localhost:9200/bblfr/doc/_search?pretty)
+
+It also monitors Pull Requests and validate that the json file is still correct.
 
 ## Run
 
@@ -55,7 +57,9 @@ And you should see:
 If you want to push to another cluster, you need to start the application with:
 
 ```sh
-SOURCE=https://raw.githubusercontent.com/brownbaglunch/bblfr_data/gh-pages/baggers.js \
+ROOT=https://raw.githubusercontent.com/brownbaglunch/bblfr_data \
+BRANCH=gh-pages \
+SOURCE=/baggers.js \
 TARGET=https://username:password@yourcluster.found.io:9243 \
 TOKEN=hhdquiHdsuqiudshqhiudhuebefbbcbzbczib \
     java -jar target/java-webhook-1.0-SNAPSHOT-fat.jar
@@ -111,7 +115,8 @@ You will get back:
 ```json
 {
   "speakers" : 243,
-  "cities" : 39
+  "cities" : 39,
+  "with_failures" : false
 }
 ```
 
@@ -135,7 +140,9 @@ Connect to your [Clever-cloud console](https://console.clever-cloud.com/).
 Create your Java application and define your variables in the Console:
 
 ```
-SOURCE=https://raw.githubusercontent.com/brownbaglunch/bblfr_data/gh-pages/baggers.js
+ROOT=https://raw.githubusercontent.com/brownbaglunch/bblfr_data
+BRANCH=gh-pages
+SOURCE=/baggers.js
 TARGET=http://bblfr:password@localhost:9200
 TOKEN=12345678
 PORT=8080
@@ -162,7 +169,7 @@ Et voilà!
 ```
 This software is licensed under the Apache 2 license, quoted below.
 
-Copyright 2011-2017 David Pilato
+Copyright 2018 Brownbaglunch.fr
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not
 use this file except in compliance with the License. You may obtain a copy of

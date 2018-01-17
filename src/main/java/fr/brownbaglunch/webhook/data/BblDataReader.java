@@ -38,18 +38,24 @@ public class BblDataReader {
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    private static void enrichSpeakers(Map<String, Speaker> speakers, Map<String, City> cities) {
+    private static boolean enrichSpeakers(Map<String, Speaker> speakers, Map<String, City> cities) {
+        boolean error = false;
         for (Speaker speaker : speakers.values()) {
-            enrichSpeaker(speaker, cities);
+            if (enrichSpeaker(speaker, cities)) {
+                error = true;
+            }
         }
+        return error;
     }
 
-    private static void enrichSpeaker(Speaker speaker, Map<String, City> cities) {
+    private static boolean enrichSpeaker(Speaker speaker, Map<String, City> cities) {
+        boolean error = false;
         for (String cityName : speaker.cities) {
             // Find the city in the cities map
             City city = cities.get(cityName);
             if (city == null) {
                 logger.error("City {} does not exist in {}", cityName, cities.keySet());
+                error = true;
             } else {
                 Speaker.GeoLocation geoLocation = new Speaker.GeoLocation();
                 geoLocation.name = city.name;
@@ -60,6 +66,7 @@ public class BblDataReader {
                 speaker.locations.add(geoLocation);
             }
         }
+        return error;
     }
 
     static JsonNode readRawData(String rawData) throws IOException {
@@ -83,11 +90,11 @@ public class BblDataReader {
         return mapper.readValue(json.toString(), City.class);
     }
 
-    public static void fillSpeakersAndCities(String rawData, Map<String, Speaker> speakers, Map<String, City> cities) throws IOException {
-        fillSpeakersAndCities(readRawData(rawData), speakers, cities);
+    static public boolean fillSpeakersAndCities(String rawData, Map<String, Speaker> speakers, Map<String, City> cities) throws IOException {
+        return fillSpeakersAndCities(readRawData(rawData), speakers, cities);
     }
 
-    static void fillSpeakersAndCities(JsonNode root, Map<String, Speaker> speakers, Map<String, City> cities) throws IOException {
+    static boolean fillSpeakersAndCities(JsonNode root, Map<String, Speaker> speakers, Map<String, City> cities) throws IOException {
         JsonNode jsonSpeakers = BblDataReader.extractSpeakers(root);
 
         for (JsonNode jsonSpeaker : jsonSpeakers) {
@@ -110,7 +117,7 @@ public class BblDataReader {
             }
         });
 
-        BblDataReader.enrichSpeakers(speakers, cities);
+        return BblDataReader.enrichSpeakers(speakers, cities);
     }
 
     public static String toJson(Speaker speaker) throws Exception {

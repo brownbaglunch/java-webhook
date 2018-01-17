@@ -19,6 +19,7 @@
 
 package fr.brownbaglunch.webhook.data;
 
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonNode;
 import fr.brownbaglunch.webhook.model.City;
 import fr.brownbaglunch.webhook.model.Speaker;
@@ -37,8 +38,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BblDataReaderTest {
 
@@ -108,7 +112,7 @@ class BblDataReaderTest {
         assertEquals(38, cities.size());
         assertEquals(2, speakers.size());
 
-        Speaker speaker1 = speakers.get(0);
+        Speaker speaker1 = speakers.get("email1@domain.com");
         checkSpeaker1(speaker1);
         assertEquals(1, speaker1.locations.size());
         assertEquals("Paris", speaker1.locations.get(0).name);
@@ -157,5 +161,29 @@ class BblDataReaderTest {
         assertNotNull(speaker.contacts);
         assertEquals("twittos1", speaker.contacts.twitter);
         assertEquals("email1@domain.com", speaker.contacts.mail);
+    }
+
+    @Test
+    void testReadBadJsonWithTypo() throws IOException, URISyntaxException {
+        URL url = BblDataReaderTest.class.getResource("/fr/brownbaglunch/webhook/pr-baggers-ko-typo.js");
+        Path path = Paths.get(url.toURI());
+        String s = new String(Files.readAllBytes(path), "UTF-8");
+        assertThrows(JsonParseException.class, () -> BblDataReader.fillSpeakersAndCities(s, new HashMap<>(), new HashMap<>()));
+    }
+
+    @Test
+    void testReadBadJsonWithMissingCity() throws IOException, URISyntaxException {
+        URL url = BblDataReaderTest.class.getResource("/fr/brownbaglunch/webhook/pr-baggers-ko-missing-city.js");
+        Path path = Paths.get(url.toURI());
+        String s = new String(Files.readAllBytes(path), "UTF-8");
+        assertTrue(BblDataReader.fillSpeakersAndCities(s, new HashMap<>(), new HashMap<>()));
+    }
+
+    @Test
+    void testReadCorrectJson() throws IOException, URISyntaxException {
+        URL url = BblDataReaderTest.class.getResource("/fr/brownbaglunch/webhook/speakers.js");
+        Path path = Paths.get(url.toURI());
+        String s = new String(Files.readAllBytes(path), "UTF-8");
+        assertFalse(BblDataReader.fillSpeakersAndCities(s, new HashMap<>(), new HashMap<>()));
     }
 }
