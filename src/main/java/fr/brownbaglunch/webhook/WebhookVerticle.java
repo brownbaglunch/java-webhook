@@ -29,9 +29,11 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerResponse;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.core.shareddata.SharedData;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.client.HttpRequest;
 import io.vertx.ext.web.client.WebClient;
 import org.apache.logging.log4j.LogManager;
@@ -70,12 +72,8 @@ public class WebhookVerticle extends AbstractVerticle {
         client = WebClient.create(vertx);
 
         router.route(HttpMethod.GET, "/").handler(routingContext -> {
-            // This handler will be called for every request
-            HttpServerResponse response = routingContext.response();
-            response.putHeader("content-type", "text/plain");
-
             // Write to the response and end it
-            response.end("Vert.x is running!");
+            writeJsonResponse(routingContext, new JsonObject().put("message", "Vert.x is running!").encodePrettily());
         });
         router.route(HttpMethod.POST, "/").handler(routingContext -> {
             logger.debug("POST / has been called.");
@@ -109,11 +107,8 @@ public class WebhookVerticle extends AbstractVerticle {
                             EventBus eb = vertx.eventBus();
                             eb.publish("elasticsearch.index", "TODO Index data");
 
-                            HttpServerResponse response = routingContext.response();
-                            response.putHeader("content-type", "text/plain");
-
                             // Write to the response and end it
-                            response.end("Found " + speakers.size() + " speakers and " + cities.size() + " cities.");
+                            writeJsonResponse(routingContext, new JsonObject().put("speakers", speakers.size()).put("cities", cities.size()).encodePrettily());
                         } catch (IOException e) {
                             logger.error("Failed to parse JSON from ", source);
                         }
@@ -124,21 +119,15 @@ public class WebhookVerticle extends AbstractVerticle {
                     }
                 });
             } else {
-                HttpServerResponse response = routingContext.response();
-                response.putHeader("content-type", "text/plain");
-
                 // Write to the response and end it
-                response.end("Signature Key is incorrect. We skip the update process.");
+                writeJsonResponse(routingContext, new JsonObject().put("message", "Signature Key is incorrect. We skip the update process.").encodePrettily());
             }
         });
 
-        router.route("/_stop").handler(routingContext -> {
+        router.route(HttpMethod.POST, "/_stop").handler(routingContext -> {
             // This handler will be called to stop vertx
-            HttpServerResponse response = routingContext.response();
-            response.putHeader("content-type", "text/plain");
-
             // Write to the response and end it
-            response.end("Stopping Vert.x!");
+            writeJsonResponse(routingContext, new JsonObject().put("message", "Stopping Vert.x!").encodePrettily());
             vertx.close();
         });
 
@@ -154,5 +143,13 @@ public class WebhookVerticle extends AbstractVerticle {
             client.close();
         }
         logger.info("HTTP server stopped");
+    }
+
+    private static void writeJsonResponse(RoutingContext routingContext, String json) {
+        HttpServerResponse response = routingContext.response();
+        response.putHeader("content-type", "application/json");
+        response.putHeader("content-length", "" + json.length());
+        logger.debug("Writing response: {}", json);
+        response.write(json).end();
     }
 }
