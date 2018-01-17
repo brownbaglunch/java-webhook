@@ -72,6 +72,63 @@ PORT=9000 java -jar target/java-webhook-1.0-SNAPSHOT-fat.jar
 
 By default, it will listen on `0.0.0.0`, port `8080`.
 
+## Endpoints
+
+### Status (GET /)
+
+If you just want to check that the service is running, call:
+
+```sh
+curl -XGET localhost:8080
+```
+
+You will get back:
+
+```json
+{
+  "message" : "Vert.x is running!"
+}
+```
+
+### Deploy (POST /)
+
+If you want to run the process of reading data from Github, then sending that to elasticsearch, you need to call:
+
+```sh
+curl -XPOST localhost:8080/
+```
+
+In production (when `TOKEN` is set), you need to provide the right SHA1 signature like:
+
+```sh
+curl -XPOST localhost:8080/_stop -H "X-Hub-Signature: sha1=22202b35f1482c1a8d3d0c3f6b3c46307792d409" -d '{
+  // Your content here. The signature depends on it.
+}'
+```
+
+You will get back:
+
+```json
+{
+  "speakers" : 243,
+  "cities" : 39
+}
+```
+
+### Stop the server (POST /_stop)
+
+In production (when `TOKEN` is set), you need to provide the right SHA1 signature like:
+
+```sh
+curl -XPOST localhost:8080/_stop -H "X-Bblfr-Key: sha1=22202b35f1482c1a8d3d0c3f6b3c46307792d409"
+```
+
+In development mode, just call:
+
+```sh
+curl -XPOST localhost:8080/_stop
+```
+
 ## Deployment on Clevercloud
 
 Connect to your [Clever-cloud console](https://console.clever-cloud.com/).

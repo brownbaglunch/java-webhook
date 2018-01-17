@@ -32,12 +32,11 @@ public class KeyChecker {
         logger.debug("{}", source);
 
         if (token == null || signature == null) {
-            logger.warn("GitHub token has not been sent as X-Hub-Signature header or is not set as TOKEN system property.");
+            logger.warn("Token has not been sent as X-Hub-Signature or X-Bblfr-Key header or TOKEN system property is not set.");
             return false;
         }
         String encodedKey = "sha1=" + HmacUtils.hmacSha1Hex(token, source);
         logger.debug("Generated key: {}", encodedKey);
         return encodedKey.equals(signature);
     }
-
 }

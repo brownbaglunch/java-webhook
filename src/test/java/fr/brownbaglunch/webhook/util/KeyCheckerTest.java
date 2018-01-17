@@ -123,5 +123,6 @@ class KeyCheckerTest {
         assertFalse(KeyChecker.testGithubToken(json, "sha1=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "myFakeKey"));
         assertFalse(KeyChecker.testGithubToken(json, null, "myFakeKey"));
         assertFalse(KeyChecker.testGithubToken(json, "sha1=6800e0f1f44f69cdd348360c0140526ff1dff852", null));
+        assertTrue(KeyChecker.testGithubToken("", "sha1=22202b35f1482c1a8d3d0c3f6b3c46307792d409", "myFakeKey"));
     }
 }

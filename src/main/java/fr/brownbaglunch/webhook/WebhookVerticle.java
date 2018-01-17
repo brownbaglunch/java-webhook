@@ -127,9 +127,25 @@ public class WebhookVerticle extends AbstractVerticle {
 
         router.route(HttpMethod.POST, "/_stop").handler(routingContext -> {
             // This handler will be called to stop vertx
-            // Write to the response and end it
-            writeJsonResponse(routingContext, new JsonObject().put("message", "Stopping Vert.x!").encodePrettily());
-            vertx.close();
+
+            // We check that the token is correct. In production, people need to send the right "X-Bblfr-Key: XXXX" value
+            String signature = routingContext.request().getHeader("X-Bblfr-Key");
+            boolean keyIsChecked;
+            if (signature != null || token != null) {
+                keyIsChecked = KeyChecker.testGithubToken("", signature, token);
+            } else {
+                logger.warn("Signature has not been verified. Probably Dev Mode.");
+                keyIsChecked = true;
+            }
+
+            if (keyIsChecked) {
+                // Write to the response and end it
+                writeJsonResponse(routingContext, new JsonObject().put("message", "Stopping Vert.x!").encodePrettily());
+                vertx.close();
+            } else {
+                // Write to the response and end it
+                writeJsonResponse(routingContext, new JsonObject().put("message", "X-Bblfr-Key is incorrect.").encodePrettily());
+            }
         });
 
         vertx.createHttpServer()
