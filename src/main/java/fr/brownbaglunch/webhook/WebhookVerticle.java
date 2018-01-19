@@ -26,7 +26,7 @@ import fr.brownbaglunch.webhook.model.GithubPrEvent;
 import fr.brownbaglunch.webhook.model.Speaker;
 import fr.brownbaglunch.webhook.util.KeyChecker;
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Vertx;
+import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.EventBus;
 import io.vertx.core.http.HttpMethod;
@@ -51,17 +51,26 @@ public class WebhookVerticle extends AbstractVerticle {
 
     private final static Logger logger = LogManager.getLogger(WebhookVerticle.class);
 
-    private final Vertx vertx;
+    private final int port;
+    private final String token;
+    private final String root;
+    private final String branch;
+    private final String source;
+
 
     private WebClient client;
 
-    WebhookVerticle(Vertx vertx) throws IOException {
-        this.vertx = vertx;
-        logger.info("Starting HTTP server on port {}", Environment.port);
+    WebhookVerticle(int port, String token, String root, String branch, String source) {
+        this.port = port;
+        this.token = token;
+        this.root = root;
+        this.branch = branch;
+        this.source = source;
+        logger.info("Starting HTTP server on port {}", this.port);
     }
 
     @Override
-    public void start() throws Exception {
+    public void start(Future<Void> futureVertx) {
         Router router = Router.router(vertx);
 
         // Create the WebClient to connect to GitHub
@@ -78,8 +87,8 @@ public class WebhookVerticle extends AbstractVerticle {
             String signature = routingContext.request().getHeader("X-Hub-Signature");
             String body = routingContext.getBodyAsString();
             logger.trace(body);
-            if (signature != null || Environment.token != null) {
-                keyIsChecked = KeyChecker.testGithubToken(body, signature, Environment.token);
+            if (signature != null || token != null) {
+                keyIsChecked = KeyChecker.testGithubToken(body, signature, token);
             } else {
                 logger.warn("Signature has not been verified. Probably Dev Mode.");
                 keyIsChecked = true;
@@ -87,7 +96,7 @@ public class WebhookVerticle extends AbstractVerticle {
 
             if (keyIsChecked) {
                 // This handler will be called by github when data are changing
-                String url = Environment.root + "/" + Environment.branch + Environment.source;
+                String url = root + "/" + branch + source;
                 logger.info("Reading data from {}", url);
                 HttpRequest<Buffer> request = client.getAbs(url);
                 request.send(handler -> {
@@ -136,8 +145,8 @@ public class WebhookVerticle extends AbstractVerticle {
             String signature = routingContext.request().getHeader("X-Hub-Signature");
             String body = routingContext.getBodyAsString();
             logger.trace(body);
-            if (signature != null || Environment.token != null) {
-                keyIsChecked = KeyChecker.testGithubToken(body, signature, Environment.token);
+            if (signature != null || token != null) {
+                keyIsChecked = KeyChecker.testGithubToken(body, signature, token);
             } else {
                 logger.warn("Signature has not been verified. Probably Dev Mode.");
                 keyIsChecked = true;
@@ -213,8 +222,8 @@ public class WebhookVerticle extends AbstractVerticle {
             // We check that the token is correct. In production, people need to send the right "X-Bblfr-Key: XXXX" value
             String signature = routingContext.request().getHeader("X-Bblfr-Key");
             boolean keyIsChecked;
-            if (signature != null || Environment.token != null) {
-                keyIsChecked = KeyChecker.testGithubToken("", signature, Environment.token);
+            if (signature != null || token != null) {
+                keyIsChecked = KeyChecker.testGithubToken("", signature, token);
             } else {
                 logger.warn("Signature has not been verified. Probably Dev Mode.");
                 keyIsChecked = true;
@@ -232,8 +241,15 @@ public class WebhookVerticle extends AbstractVerticle {
 
         vertx.createHttpServer()
                 .requestHandler(router::accept)
-                .listen(Environment.port);
-        logger.info("HTTP server started on port {}", Environment.port);
+                .listen(port, ar -> {
+                    if (ar.succeeded()) {
+                        futureVertx.complete();
+                    }
+                    if (ar.failed()) {
+                        futureVertx.fail("Can not start");
+                    }
+                });
+        logger.info("HTTP server started on port {}", port);
     }
 
     @Override

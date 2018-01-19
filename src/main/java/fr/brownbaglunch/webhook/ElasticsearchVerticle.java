@@ -24,8 +24,8 @@ import fr.brownbaglunch.webhook.model.City;
 import fr.brownbaglunch.webhook.model.Speaker;
 import fr.brownbaglunch.webhook.service.ElasticsearchClientManager;
 import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Vertx;
-import io.vertx.core.eventbus.EventBus;
+import io.vertx.core.Future;
+import io.vertx.core.eventbus.Message;
 import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.shareddata.LocalMap;
 import io.vertx.core.shareddata.SharedData;
@@ -49,109 +49,32 @@ import java.util.Map;
  */
 public class ElasticsearchVerticle extends AbstractVerticle {
 
-    private final Logger logger = LogManager.getLogger(ElasticsearchVerticle.class);
+    private static final Logger logger = LogManager.getLogger(ElasticsearchVerticle.class);
 
-    private static final String DEFAULT_TARGET="http://localhost:9200";
+    private final String url;
 
-    private final Vertx vertx;
-
-    private final String target;
     private ElasticsearchClientManager elasticsearchClientManager;
 
-    ElasticsearchVerticle(Vertx vertx) throws IOException {
-        this.vertx = vertx;
-
-        // Reading our configuration from ENV or SYSTEM Variables
-        target = System.getenv().getOrDefault("TARGET", System.getProperties().getProperty("TARGET", DEFAULT_TARGET));
+    ElasticsearchVerticle(String url) {
+        this.url = url;
     }
 
     @Override
-    public void start() throws Exception {
-        logger.info("Starting Elasticsearch Client");
+    public void start(Future<Void> futureVertx) {
+        logger.debug("Starting Elasticsearch Verticle");
 
         // Create elasticsearch client
-        elasticsearchClientManager = startElasticsearch();
+        elasticsearchClientManager = startElasticsearch(url);
         if (elasticsearchClientManager == null) {
             logger.info("Closing Vertx...");
             vertx.close();
         }
 
-        EventBus eb = vertx.eventBus();
+        logger.debug("Elasticsearch Client has been created");
 
-        MessageConsumer<String> consumer = eb.consumer("elasticsearch.index");
-        consumer.handler(message -> {
-            // Read the shared data
-            logger.debug("ElasticsearchVerticle got a message from the bus: ", message.body());
-
-            SharedData sd = vertx.sharedData();
-
-            LocalMap<String, City> cities = sd.getLocalMap("cities");
-            LocalMap<String, Speaker> speakers = sd.getLocalMap("speakers");
-
-            logger.info("Let's index {} speakers and {} cities.", speakers.size(), cities.size());
-
-            // Check that elasticsearch is still running, otherwise, reinit
-            try {
-                elasticsearchClientManager.checkRunning();
-            } catch (Exception e) {
-                // Elasticsearch is not running anymore. Let's restart it.
-                elasticsearchClientManager.close();
-
-                // Create elasticsearch client
-                elasticsearchClientManager = startElasticsearch();
-                if (elasticsearchClientManager == null) {
-                    logger.info("Closing Vertx...");
-                    vertx.close();
-                }
-            }
-
-            String indexName = "bblfr_speakers_" + DateTime.now().toString("yyyyMMddHHmmssSSS");
-
-            // This task can take some time so let's tell that to VertX
-            vertx.<BulkResponse>executeBlocking(future -> {
-                try {
-                    BulkRequest request = new BulkRequest();
-
-                    for (Map.Entry<String, Speaker> speakerEntry : speakers.entrySet()) {
-                        String json = BblDataReader.toJson(speakerEntry.getValue());
-                        logger.debug("Indexing {}", speakerEntry.getKey());
-                        logger.trace(json);
-                        request.add(new IndexRequest(indexName, "doc", speakerEntry.getKey()).source(json, XContentType.JSON));
-                    }
-                    request.setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
-
-                    BulkResponse bulkResponse = elasticsearchClientManager.client().bulk(request);
-
-                    future.complete(bulkResponse);
-                } catch (Exception e) {
-                    logger.error("Can not send to elasticsearch ", e);
-                }
-            }, res -> {
-                BulkResponse bulkResponse = res.result();
-                logger.info("Indexed in elasticsearch: {}", bulkResponse.hasFailures() ? "with failures" : "OK");
-                int errors = 0;
-                if (bulkResponse.hasFailures()) {
-                    for (BulkItemResponse bulkItemResponse : bulkResponse) {
-                        if (bulkItemResponse.isFailed()) {
-                            errors++;
-                            logger.warn("Failed for {}: {} ", bulkItemResponse.getId(), bulkItemResponse.getFailureMessage());
-                        }
-                    }
-                }
-
-                if (errors < 10) {
-                    try {
-                        // Let say we have few errors, so let's still switch the alias
-                        elasticsearchClientManager.client().switchAlias("bblfr_speaker*", indexName, "bblfr");
-
-                        // And remove the old indices
-                        elasticsearchClientManager.client().deleteIndex("bblfr_speaker*,-" + indexName);
-                    } catch (IOException e) {
-                        logger.warn("Failed to switch the alias and delete the old index", e);
-                    }
-                }
-            });
-        });
+        MessageConsumer<String> consumer = vertx.eventBus().consumer("elasticsearch.index");
+        consumer.handler(this::handleMessage);
+        futureVertx.complete();
     }
 
     @Override
@@ -166,10 +89,10 @@ public class ElasticsearchVerticle extends AbstractVerticle {
      * We start elasticsearch and return true if ok
      * @return true if OK or false if KO
      */
-    private ElasticsearchClientManager startElasticsearch() {
+    private static ElasticsearchClientManager startElasticsearch(String url) {
         ElasticsearchClientManager elasticsearchClientManager = null;
         try {
-            elasticsearchClientManager = new ElasticsearchClientManager(target);
+            elasticsearchClientManager = new ElasticsearchClientManager(url);
             // Create elasticsearch client
             elasticsearchClientManager.start();
             return elasticsearchClientManager;
@@ -180,5 +103,78 @@ public class ElasticsearchVerticle extends AbstractVerticle {
             }
             return null;
         }
+    }
+
+    private void handleMessage(Message<String> message) {
+        logger.debug("ElasticsearchVerticle got a message from the bus: ", message.body());
+
+        SharedData sd = vertx.sharedData();
+
+        LocalMap<String, City> cities = sd.getLocalMap("cities");
+        LocalMap<String, Speaker> speakers = sd.getLocalMap("speakers");
+
+        logger.info("Let's index {} speakers and {} cities.", speakers.size(), cities.size());
+
+        // Check that elasticsearch is still running, otherwise, reinit
+        try {
+            elasticsearchClientManager.checkRunning();
+        } catch (Exception e) {
+            // Elasticsearch is not running anymore. Let's restart it.
+            elasticsearchClientManager.close();
+
+            // Create elasticsearch client
+            elasticsearchClientManager = startElasticsearch(url);
+            if (elasticsearchClientManager == null) {
+                logger.info("Closing Vertx...");
+                vertx.close();
+            }
+        }
+
+        String indexName = "bblfr_speakers_" + DateTime.now().toString("yyyyMMddHHmmssSSS");
+
+        // This task can take some time so let's tell that to VertX
+        vertx.<BulkResponse>executeBlocking(future -> {
+            try {
+                BulkRequest request = new BulkRequest();
+
+                for (Map.Entry<String, Speaker> speakerEntry : speakers.entrySet()) {
+                    String json = BblDataReader.toJson(speakerEntry.getValue());
+                    logger.debug("Indexing {}", speakerEntry.getKey());
+                    logger.trace(json);
+                    request.add(new IndexRequest(indexName, "doc", speakerEntry.getKey()).source(json, XContentType.JSON));
+                }
+                request.setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
+
+                BulkResponse bulkResponse = elasticsearchClientManager.client().bulk(request);
+
+                future.complete(bulkResponse);
+            } catch (Exception e) {
+                logger.error("Can not send to elasticsearch ", e);
+            }
+        }, res -> {
+            BulkResponse bulkResponse = res.result();
+            logger.info("Indexed in elasticsearch: {}", bulkResponse.hasFailures() ? "with failures" : "OK");
+            int errors = 0;
+            if (bulkResponse.hasFailures()) {
+                for (BulkItemResponse bulkItemResponse : bulkResponse) {
+                    if (bulkItemResponse.isFailed()) {
+                        errors++;
+                        logger.warn("Failed for {}: {} ", bulkItemResponse.getId(), bulkItemResponse.getFailureMessage());
+                    }
+                }
+            }
+
+            if (errors < 10) {
+                try {
+                    // Let say we have few errors, so let's still switch the alias
+                    elasticsearchClientManager.client().switchAlias("bblfr_speaker*", indexName, "bblfr");
+
+                    // And remove the old indices
+                    elasticsearchClientManager.client().deleteIndex("bblfr_speaker*,-" + indexName);
+                } catch (IOException e) {
+                    logger.warn("Failed to switch the alias and delete the old index", e);
+                }
+            }
+        });
     }
 }
