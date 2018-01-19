@@ -64,11 +64,6 @@ public class ElasticsearchClientManager {
         client.createIndexTemplate("bblfr", template);
     }
 
-    private String readFileFromClasspath(final String fileName) throws IOException, URISyntaxException {
-        return new String(Files.readAllBytes(
-                Paths.get(ElasticsearchClientManager.class.getResource(fileName).toURI())));
-    }
-
     public void close() {
         logger.debug("Closing Elasticsearch client manager");
         if (client != null) {

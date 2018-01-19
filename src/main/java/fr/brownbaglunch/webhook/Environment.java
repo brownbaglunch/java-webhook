@@ -20,15 +20,17 @@
 package fr.brownbaglunch.webhook;
 
 public class Environment {
-    public static final String DEFAULT_ROOT = "https://raw.githubusercontent.com/brownbaglunch/bblfr_data";
-    public static final String DEFAULT_BRANCH = "gh-pages";
-    public static final String DEFAULT_SOURCE = "/baggers.js";
-    public static final String DEFAULT_TOKEN = null;
-    public static final int DEFAULT_PORT = 8080;
+    public final static String DEFAULT_ROOT = "https://raw.githubusercontent.com/brownbaglunch/bblfr_data";
+    public final static String DEFAULT_BRANCH = "gh-pages";
+    public final static String DEFAULT_SOURCE = "/baggers.js";
+    public final static String DEFAULT_TOKEN = null;
+    public final static int DEFAULT_PORT = 8080;
+    public final static String DEFAULT_TARGET="http://localhost:9200";
 
     public final static String root = System.getenv().getOrDefault("ROOT", System.getProperties().getProperty("ROOT", DEFAULT_ROOT));
     public final static String branch = System.getenv().getOrDefault("BRANCH", System.getProperties().getProperty("BRANCH", DEFAULT_BRANCH));
     public final static String source = System.getenv().getOrDefault("SOURCE", System.getProperties().getProperty("SOURCE", DEFAULT_SOURCE));
     public final static String token = System.getenv().getOrDefault("TOKEN", System.getProperties().getProperty("TOKEN", DEFAULT_TOKEN));
     public final static Integer port = Integer.parseInt(System.getenv().getOrDefault("PORT", System.getProperties().getProperty("PORT", "" + DEFAULT_PORT)));
+    public final static String target = System.getenv().getOrDefault("TARGET", System.getProperties().getProperty("TARGET", DEFAULT_TARGET));
 }
