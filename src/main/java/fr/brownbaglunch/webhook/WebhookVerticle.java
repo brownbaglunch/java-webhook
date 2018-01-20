@@ -26,6 +26,7 @@ import fr.brownbaglunch.webhook.model.GithubPrEvent;
 import fr.brownbaglunch.webhook.model.Speaker;
 import fr.brownbaglunch.webhook.util.KeyChecker;
 import io.vertx.core.AbstractVerticle;
+import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.EventBus;
@@ -45,226 +46,50 @@ import org.apache.logging.log4j.Logger;
 import java.io.IOException;
 
 /**
- * You may want to set the TOKEN system property that you set in GitHub
+ * This is the main Verticle. It controls the whole application.
  */
 public class WebhookVerticle extends AbstractVerticle {
 
     private final static Logger logger = LogManager.getLogger(WebhookVerticle.class);
 
-    private final int port;
-    private final String token;
-    private final String root;
-    private final String branch;
-    private final String source;
+    private final String elasticsearchUrl;
+    private final int webserverPort;
+    private final String webserverToken;
+    private final String webserverRoot;
+    private final String webserverBranch;
+    private final String webserverSource;
 
-
-    private WebClient client;
-
-    WebhookVerticle(int port, String token, String root, String branch, String source) {
-        this.port = port;
-        this.token = token;
-        this.root = root;
-        this.branch = branch;
-        this.source = source;
-        logger.info("Starting HTTP server on port {}", this.port);
+    public WebhookVerticle(String elasticsearchUrl, int webserverPort, String webserverToken, String webserverRoot, String webserverBranch, String webserverSource) {
+        this.elasticsearchUrl = elasticsearchUrl;
+        this.webserverPort = webserverPort;
+        this.webserverToken = webserverToken;
+        this.webserverRoot = webserverRoot;
+        this.webserverBranch = webserverBranch;
+        this.webserverSource = webserverSource;
     }
 
     @Override
-    public void start(Future<Void> futureVertx) {
-        Router router = Router.router(vertx);
+    public void start(Future<Void> startFuture) {
+        logger.debug("Starting Webhook Verticle");
 
-        // Create the WebClient to connect to GitHub
-        client = WebClient.create(vertx);
+        Future<String> elasticsearchVerticleDeployment = Future.future();
+        vertx.deployVerticle(new ElasticsearchVerticle(elasticsearchUrl), elasticsearchVerticleDeployment.completer());
 
-        router.route(HttpMethod.GET, "/").handler(routingContext -> {
-            // Write to the response and end it
-            writeJsonResponse(routingContext, new JsonObject().put("message", "Vert.x is running!").encodePrettily());
-        });
-        router.route(HttpMethod.POST, "/").handler(BodyHandler.create()).handler(routingContext -> {
-            logger.debug("POST / has been called.");
-            // We need to check the Token is set
-            boolean keyIsChecked;
-            String signature = routingContext.request().getHeader("X-Hub-Signature");
-            String body = routingContext.getBodyAsString();
-            logger.trace(body);
-            if (signature != null || token != null) {
-                keyIsChecked = KeyChecker.testGithubToken(body, signature, token);
+        elasticsearchVerticleDeployment.compose(id -> {
+            Future<String> webServerVerticleDeployment = Future.future();
+            vertx.deployVerticle(
+                    new WebServerVerticle(webserverPort, webserverToken, webserverRoot, webserverBranch, webserverSource),
+                    webServerVerticleDeployment.completer());
+
+            return webServerVerticleDeployment;
+        }).setHandler(ar -> {
+            if (ar.succeeded()) {
+                logger.debug("Webhook Verticle started");
+                startFuture.complete();
             } else {
-                logger.warn("Signature has not been verified. Probably Dev Mode.");
-                keyIsChecked = true;
-            }
-
-            if (keyIsChecked) {
-                // This handler will be called by github when data are changing
-                String url = root + "/" + branch + source;
-                logger.info("Reading data from {}", url);
-                HttpRequest<Buffer> request = client.getAbs(url);
-                request.send(handler -> {
-                    if (handler.succeeded()) {
-                        String githubData = handler.result().bodyAsString();
-                        logger.trace(githubData);
-                        try {
-                            SharedData sd = vertx.sharedData();
-
-                            LocalMap<String, City> cities = sd.getLocalMap("cities");
-                            LocalMap<String, Speaker> speakers = sd.getLocalMap("speakers");
-                            boolean failure = BblDataReader.fillSpeakersAndCities(githubData, speakers, cities);
-
-                            EventBus eb = vertx.eventBus();
-                            eb.publish("elasticsearch.index", "TODO Index data");
-
-                            // Write to the response and end it
-                            writeJsonResponse(routingContext,
-                                    new JsonObject()
-                                            .put("speakers", speakers.size())
-                                            .put("cities", cities.size())
-                                            .put("with_failures", failure)
-                                            .encodePrettily());
-                        } catch (IOException e) {
-                            logger.error("Failed to parse JSON from ", url);
-                            writeJsonResponse(routingContext,
-                                    new JsonObject().put("message", "Failed to parse the JSON document.").encodePrettily());
-                        }
-
-                    }
-                    if (handler.failed()) {
-                        logger.error("Failed to read from ", url);
-                        writeJsonResponse(routingContext,
-                                new JsonObject().put("message", "Failed to read the content from " + url + ".").encodePrettily());
-                    }
-                });
-            } else {
-                // Write to the response and end it
-                writeJsonResponse(routingContext, new JsonObject().put("message", "Signature Key is incorrect. We skip the update process.").encodePrettily());
+                logger.error("Failed starting Webhook Verticle", ar.cause());
+                startFuture.fail(ar.cause());
             }
         });
-        router.route(HttpMethod.POST, "/_validate").handler(BodyHandler.create()).handler(routingContext -> {
-            logger.info("POST /_validate has been called.");
-            // We need to check the Token is set
-            boolean keyIsChecked;
-            String signature = routingContext.request().getHeader("X-Hub-Signature");
-            String body = routingContext.getBodyAsString();
-            logger.trace(body);
-            if (signature != null || token != null) {
-                keyIsChecked = KeyChecker.testGithubToken(body, signature, token);
-            } else {
-                logger.warn("Signature has not been verified. Probably Dev Mode.");
-                keyIsChecked = true;
-            }
-
-            if (keyIsChecked) {
-                // Convert the event to a PR
-                try {
-                    GithubPrEvent pr = GithubPrReader.toGithubEvent(body);
-
-                    // We just check if the pr is still active
-                    if ("opened".equals(pr.action) || "synchronize".equals(pr.action)) {
-                        String url = pr.getUrl();
-                        logger.info("Reading data from {}", url);
-                        HttpRequest<Buffer> request = client.getAbs(url);
-                        request.send(handler -> {
-                            if (handler.succeeded()) {
-                                String githubData = handler.result().bodyAsString();
-                                logger.trace(githubData);
-                                try {
-                                    SharedData sd = vertx.sharedData();
-
-                                    LocalMap<String, City> cities = sd.getLocalMap("cities");
-                                    LocalMap<String, Speaker> speakers = sd.getLocalMap("speakers");
-                                    boolean failure = BblDataReader.fillSpeakersAndCities(githubData, speakers, cities);
-
-                                    // Write to the response and end it
-                                    String json = new JsonObject()
-                                            .put("message", "PR Checked. Everything seems ok.")
-                                            .put("commit", pr.pull_request.head.sha)
-                                            .put("speakers", speakers.size())
-                                            .put("cities", cities.size())
-                                            .put("with_failures", failure)
-                                            .encodePrettily();
-                                    writeJsonResponse(routingContext, json);
-                                    logger.info("{}", json);
-                                } catch (IOException e) {
-                                    logger.error("Failed to parse JSON from ", url);
-                                    writeJsonResponse(routingContext,
-                                            new JsonObject().put("message", "Failed to parse the JSON document.").encodePrettily());
-                                    logger.warn("Check the PR. Something seems wrong.", e);
-                                }
-                            }
-                            if (handler.failed()) {
-                                logger.error("Failed to read from ", url);
-                                writeJsonResponse(routingContext,
-                                        new JsonObject().put("message", "Failed to read the content from " + url + ".").encodePrettily());
-                            }
-                        });
-                    } else {
-                        writeJsonResponse(routingContext,
-                                new JsonObject().put("message", "Not supported action [" + pr.action + "]. Skipped").encodePrettily());
-                    }
-
-                } catch (IOException e) {
-                    logger.error("Failed to parse the PR JSON document", e);
-                    writeJsonResponse(routingContext,
-                            new JsonObject().put("message", "Failed to parse the PR JSON document.").encodePrettily());
-                }
-
-                // If possible but that is going to require to become an application
-                // https://developer.github.com/v3/pulls/reviews/#submit-a-pull-request-review
-                // POST /repos/:owner/:repo/pulls/:number/reviews/:id/events
-            } else {
-                // Write to the response and end it
-                writeJsonResponse(routingContext, new JsonObject().put("message", "Signature Key is incorrect. We skip the update process.").encodePrettily());
-            }
-        });
-
-        router.route(HttpMethod.POST, "/_stop").handler(routingContext -> {
-            // This handler will be called to stop vertx
-
-            // We check that the token is correct. In production, people need to send the right "X-Bblfr-Key: XXXX" value
-            String signature = routingContext.request().getHeader("X-Bblfr-Key");
-            boolean keyIsChecked;
-            if (signature != null || token != null) {
-                keyIsChecked = KeyChecker.testGithubToken("", signature, token);
-            } else {
-                logger.warn("Signature has not been verified. Probably Dev Mode.");
-                keyIsChecked = true;
-            }
-
-            if (keyIsChecked) {
-                // Write to the response and end it
-                writeJsonResponse(routingContext, new JsonObject().put("message", "Stopping Vert.x!").encodePrettily());
-                vertx.close();
-            } else {
-                // Write to the response and end it
-                writeJsonResponse(routingContext, new JsonObject().put("message", "X-Bblfr-Key is incorrect.").encodePrettily());
-            }
-        });
-
-        vertx.createHttpServer()
-                .requestHandler(router::accept)
-                .listen(port, ar -> {
-                    if (ar.succeeded()) {
-                        futureVertx.complete();
-                    }
-                    if (ar.failed()) {
-                        futureVertx.fail("Can not start");
-                    }
-                });
-        logger.info("HTTP server started on port {}", port);
-    }
-
-    @Override
-    public void stop() {
-        if (client != null) {
-            client.close();
-        }
-        logger.info("HTTP server stopped");
-    }
-
-    private static void writeJsonResponse(RoutingContext routingContext, String json) {
-        HttpServerResponse response = routingContext.response();
-        response.putHeader("content-type", "application/json");
-        response.putHeader("content-length", "" + json.length());
-        logger.debug("Writing response: {}", json);
-        response.write(json).end();
     }
 }

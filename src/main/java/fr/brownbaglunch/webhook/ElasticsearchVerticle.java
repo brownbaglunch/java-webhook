@@ -36,6 +36,7 @@ import org.elasticsearch.action.bulk.BulkRequest;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.support.WriteRequest;
+import org.elasticsearch.client.transport.NoNodeAvailableException;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.joda.time.DateTime;
 
@@ -67,7 +68,7 @@ public class ElasticsearchVerticle extends AbstractVerticle {
         elasticsearchClientManager = startElasticsearch(url);
         if (elasticsearchClientManager == null) {
             logger.info("Closing Vertx...");
-            vertx.close();
+            throw new NoNodeAvailableException("No node running at " + url);
         }
 
         logger.debug("Elasticsearch Client has been created");

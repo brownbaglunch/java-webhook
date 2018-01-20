@@ -17,24 +17,28 @@
  * under the License.
  */
 
-package fr.brownbaglunch.webhook;
+package fr.brownbaglunch.webhook.it;
 
+import fr.brownbaglunch.webhook.WebhookVerticle;
 import io.vertx.core.Vertx;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.junit.jupiter.api.Test;
 
-import java.io.IOException;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class WebhookLauncher {
+class WebhookElasticsearchNotWorkingIT extends AbstractIT {
 
-    private static final Logger logger = LogManager.getLogger(WebhookLauncher.class);
+    private final static String ES_CLUSTER_WRONG = "http://localhost:9210";
 
-    public static void main(String[] args) {
-        Vertx vertx = Vertx.vertx();
-        vertx.deployVerticle(new WebhookVerticle(
-                Environment.target,
-                Environment.port, Environment.token, Environment.root, Environment.branch, Environment.source), id -> {
-            logger.debug("Webhook Verticle has been deployed {}", id);
-        });
+    @Override
+    WebhookVerticle buildWebhookVerticle() {
+        // Create Webhook Vertice
+        return new WebhookVerticle(
+                ES_CLUSTER_WRONG,
+                HTTP_PORT, null, "http://localhost:" + (HTTP_PORT + 1), "gh-pages", "/speakers.js");
+    }
+
+    @Test
+    void testNothingHasBeenDeployed(Vertx vertx) {
+        assertTrue(vertx.deploymentIDs().isEmpty());
     }
 }
