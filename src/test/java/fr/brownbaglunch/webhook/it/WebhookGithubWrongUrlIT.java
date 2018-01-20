@@ -19,10 +19,8 @@
 
 package fr.brownbaglunch.webhook.it;
 
-import com.sun.tools.javac.resources.version;
 import fr.brownbaglunch.webhook.WebhookVerticle;
 import io.vertx.core.Vertx;
-import io.vertx.junit5.VertxTestContext;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;

@@ -37,17 +37,15 @@ import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WebhookIT extends AbstractIT {
 
     @Override
     WebhookVerticle buildWebhookVerticle() {
         // Create Webhook Vertice
-        WebhookVerticle webhookVerticle = new WebhookVerticle(
+        return new WebhookVerticle(
                 ES_CLUSTER,
                 HTTP_PORT, null, "http://localhost:" + (HTTP_PORT + 1), "gh-pages", "/speakers.js");
-        return webhookVerticle;
     }
 
     @Test
